@@ -113,7 +113,7 @@ class Formula:
             return self.root
         elif is_unary(self.root):
             return self.root + repr(self.first)
-        elif is_binary:
+        elif is_binary(self.root):
             return '(' + repr(self.first) + self.root + repr(self.second) + ')'
         # Task 1.1
 
@@ -180,7 +180,7 @@ class Formula:
         elif is_unary(self.root):
             res.add(self.root)
             res.update(self.first.operators())
-        return ans
+        return res
         # Task 1.3
         
     @staticmethod
@@ -200,13 +200,80 @@ class Formula:
             should be of ``None`` and an error message, where the error message
             is a string with some human-readable content.
         """
+        if not string:
+            return None, 'Empty'
+
+        ch = string[0]
+
+        if ch == '(':
+            f1, r1 = Formula._parse_prefix(string[1:])
+            if f1 is None:
+                return None, r1
+            if not r1:
+                return None, 'Incomplete'
+
+            if r1.startswith('->'):
+                o = '->'
+                r_o = r1[2:]
+            elif r1[0] == '&' or r1[0] == '|':
+                o = r1[0]
+                r_o = r1[1:]
+            else:
+                return None, 'Bad: ' + r1[0]
+
+            f2, r2 = Formula._parse_prefix(r_o)
+            if f2 is None:
+                return None, r2
+            if not r2:
+                return None, 'Missing )'
+            if r2[0] != ')':
+                return None, 'Need ) got ' + r2[0]
+
+            return Formula(o, f1, f2), r2[1:]
+
+        if ch == '~':
+            f, r = Formula._parse_prefix(string[1:])
+            if f is None:
+                return None, r
+            return Formula('~', f), r
+
+        if 'p' <= ch <= 'z':
+            j = 1
+            while j < len(string) and string[j].isdecimal():
+                j += 1
+            v = string[:j]
+            return Formula(v), string[j:]
+
+        if ch == 'T' or ch == 'F':
+            return Formula(ch), string[1:]
+
+        return None, 'Invalid: ' + ch
+
+    @staticmethod
+    def _polish_prefix(string: str) -> Tuple[Optional['Formula'], str]:
         if len(string) == 0:
             return None, 'Unexpected end of string'
 
         ch = string[0]
 
-        if ch == 'T' or ch == 'F':
-            return Formula(ch), string[1:]
+        if ch == '~':
+            fm, rs = Formula._polish_prefix(string[1:])
+            if fm is None:
+                return None, rs
+            return Formula('~', fm), rs
+
+        if is_binary(ch):
+            fm1, rs1 = Formula._polish_prefix(string[1:])
+            if fm1 is None:
+                return None, rs1
+            if len(rs1) == 0:
+                return None, 'Unexpected end of string'
+
+            fm2, rs2 = Formula._parse_prefix(rs1)
+            if fm2 is None:
+                return None, rs2
+
+            return Formula(ch, fm1, fm2), rs2
 
         if 'p' <= ch <= 'z':
             i = 1
@@ -215,37 +282,8 @@ class Formula:
             vr = string[:i]
             return Formula(vr), string[i:]
 
-        if ch == '~':
-            fm, rs = Formula._parse_prefix(string[1:])
-            if fm is None:
-                return None, rs
-            return Formula('~', fm), rs
-
-        if ch == '(':
-            fm1, rs1 = Formula._parse_prefix(string[1:])
-            if fm1 is None:
-                return None, rs1
-            if len(rs1) == 0:
-                return None, 'Unexpected end of string'
-
-            if rs1.startswith('->'):
-                op = '->'
-                rs_op = rs1[2:]
-            elif rs1[0] == '&' or rs1[0] == '|':
-                op = rs1[0]
-                rs_op = rs1[1:]
-            else:
-                return None, 'Unexpected symbol ' + rs1[0]
-
-            fm2, rs2 = Formula._parse_prefix(rs_op)
-            if fm2 is None:
-                return None, rs2
-            if len(rs2) == 0:
-                return None, 'Unexpected end of string'
-            if rs2[0] != ')':
-                return None, 'Unexpected symbol ' + rs2[0]
-
-            return Formula(op, fm1, fm2), rs2[1:]
+        if ch == 'T' or ch == 'F':
+            return Formula(ch), string[1:]
 
         return None, 'Unexpected symbol ' + ch
         # Task 1.4
@@ -292,7 +330,7 @@ class Formula:
             return self.root
         elif is_unary(self.root):
             return self.root + self.first.polish()
-        elif is_binary:
+        elif is_binary(self.root):
             return self.root + self.first.polish() + self.second.polish()
         # Optional Task 1.7
 
