@@ -63,6 +63,28 @@ def evaluate(formula: Formula, model: Model) -> bool:
     """
     assert is_model(model)
     assert formula.variables().issubset(variables(model))
+
+    if is_variable(formula.root):
+        return model[formula.root]
+    
+    if is_constant(formula.root):
+        return True if formula.root == 'T' else False
+    
+    if is_unary(formula.root):
+        return not evaluate(formula.first, model)
+    
+    left_val = evaluate(formula.first, model)
+    right_val = evaluate(formula.second, model)
+    
+    if formula.root == '&':
+        return left_val and right_val
+    elif formula.root == '|':
+        return left_val or right_val
+    elif formula.root == '->':
+        return (not left_val) or right_val
+    else:  
+        return left_val != right_val
+
     # Task 2.1
 
 def all_models(variables: Sequence[str]) -> Iterable[Model]:
@@ -85,6 +107,14 @@ def all_models(variables: Sequence[str]) -> Iterable[Model]:
     """
     for v in variables:
         assert is_variable(v)
+
+    n = len(variables)
+    for i in range(2**n):
+        model = {}
+        for j, var in enumerate(variables):
+            bit = (i >> (n - j - 1)) & 1
+            model[var] = bool(bit)
+        yield model
     # Task 2.2
 
 def truth_values(formula: Formula, models: Iterable[Model]) -> Iterable[bool]:
@@ -103,6 +133,8 @@ def truth_values(formula: Formula, models: Iterable[Model]) -> Iterable[bool]:
         >>> list(truth_values(Formula.parse('~(p&q76)'), all_models(['p', 'q76'])))
         [True, True, True, False]
     """
+     for m in models:
+        yield evaluate(formula, m)
     # Task 2.3
 
 def print_truth_table(formula: Formula) -> None:
@@ -121,6 +153,28 @@ def print_truth_table(formula: Formula) -> None:
         | T | F   | T        |
         | T | T   | F        |
     """
+    vars_list = sorted(formula.variables())
+    
+
+    header = " | ".join(vars_list + [str(formula)])
+    print(f"| {header} |")
+    
+
+    sep = " | ".join(["-" * len(v) for v in vars_list] + ["-" * len(str(formula))])
+    print(f"|{sep}|")
+    
+
+    for m in all_models(vars_list):
+        row_vals = []
+        for v in vars_list:
+            val = m[v]
+            row_vals.append("T" if val else "F")
+        
+        result = evaluate(formula, m)
+        row_vals.append("T" if result else "F")
+        
+        row = " | ".join(row_vals)
+        print(f"| {row} |")
     # Task 2.4
 
 def is_tautology(formula: Formula) -> bool:
@@ -132,6 +186,11 @@ def is_tautology(formula: Formula) -> bool:
     Returns:
         ``True`` if the given formula is a tautology, ``False`` otherwise.
     """
+    vars_list = list(formula.variables())
+    for m in all_models(vars_list):
+        if not evaluate(formula, m):
+            return False
+    return True
     # Task 2.5a
 
 def is_contradiction(formula: Formula) -> bool:
@@ -143,6 +202,11 @@ def is_contradiction(formula: Formula) -> bool:
     Returns:
         ``True`` if the given formula is a contradiction, ``False`` otherwise.
     """
+    vars_list = list(formula.variables())
+    for m in all_models(vars_list):
+        if evaluate(formula, m):
+            return False
+    return True
     # Task 2.5b
 
 def is_satisfiable(formula: Formula) -> bool:
@@ -154,6 +218,11 @@ def is_satisfiable(formula: Formula) -> bool:
     Returns:
         ``True`` if the given formula is satisfiable, ``False`` otherwise.
     """
+     vars_list = list(formula.variables())
+    for m in all_models(vars_list):
+        if evaluate(formula, m):
+            return True
+    return False
     # Task 2.5c
 
 def _synthesize_for_model(model: Model) -> Formula:
@@ -170,6 +239,21 @@ def _synthesize_for_model(model: Model) -> Formula:
     """
     assert is_model(model)
     assert len(model.keys()) > 0
+    vars_list = list(model.keys())
+    result = None
+    
+    for v in vars_list:
+        if model[v]:
+            literal = Formula(v)
+        else:
+            literal = Formula('~', Formula(v))
+        
+        if result is None:
+            result = literal
+        else:
+            result = Formula('&', result, literal)
+    
+    return result
     # Task 2.6
 
 def synthesize(variables: Sequence[str], values: Iterable[bool]) -> Formula:
@@ -195,6 +279,22 @@ def synthesize(variables: Sequence[str], values: Iterable[bool]) -> Formula:
         False
     """
     assert len(variables) > 0
+    clauses = []
+    vals_list = list(values)
+    
+    for i, m in enumerate(all_models(variables)):
+        if vals_list[i]: 
+            clause = _synthesize_for_model(m)
+            clauses.append(clause)
+    
+    if not clauses:
+        return Formula('&', Formula('p'), Formula('~', Formula('p')))
+    
+    result = clauses[0]
+    for c in clauses[1:]:
+        result = Formula('|', result, c)
+    
+    return result
     # Task 2.7
 
 def _synthesize_for_all_except_model(model: Model) -> Formula:
@@ -211,6 +311,21 @@ def _synthesize_for_all_except_model(model: Model) -> Formula:
     """
     assert is_model(model)
     assert len(model.keys()) > 0
+    vs = list(model.keys())
+    r = None
+    
+    for v in vs:
+        if not model[v]:
+            l = Formula(v)
+        else:
+            l = Formula('~', Formula(v))
+        
+        if r is None:
+            r = l
+        else:
+            r = Formula('|', r, l)
+    
+    return r
     # Optional Task 2.8
 
 def synthesize_cnf(variables: Sequence[str], values: Iterable[bool]) -> Formula:
@@ -236,6 +351,22 @@ def synthesize_cnf(variables: Sequence[str], values: Iterable[bool]) -> Formula:
         False
     """
     assert len(variables) > 0
+    fs = []
+    vs = list(values)
+    
+    for i, m in enumerate(all_models(variables)):
+        if not vs[i]:
+            f = _synthesize_for_all_except_model(m)
+            fs.append(f)
+    
+    if not fs:
+        return Formula('|', Formula('p'), Formula('~', Formula('p')))
+    
+    r = fs[0]
+    for f in fs[1:]:
+        r = Formula('&', r, f)
+    
+    return r
     # Optional Task 2.9
 
 def evaluate_inference(rule: InferenceRule, model: Model) -> bool:
